@@ -171,7 +171,7 @@ class Event(object):
         and return a Event object.
         """
         msg = cls()
-        for line in raw.splitlines():
+        for line in raw.split('\n'):
             m = cls.sse_line_pattern.match(line)
             if m is None:
                 # Malformed line.  Discard but warn.
