@@ -6,13 +6,13 @@
 from __future__ import unicode_literals
 
 import codecs
+import logging
 import re
 import time
 import warnings
 
-import six
-
 import requests
+import six
 
 __version__ = "1.0.0"
 
@@ -33,6 +33,29 @@ end_of_field = re.compile(r"\r\n\r\n|\r\r|\n\n")
 NEWLINE_MESSAGE_CHARS = b'\r\n', b'\n', b'\r',
 DECODED_NEWLINE_MESSAGE_CHARS = [nc.decode('utf-8') for nc in NEWLINE_MESSAGE_CHARS]
 SPLIT_PATTERN = re.compile('|'.join(map(re.escape, DECODED_NEWLINE_MESSAGE_CHARS)))
+ALLOWED_RESPONSE_HEADERS_FOR_DEBUG = {
+    "access-control-allow-origin",
+    "cache-control",
+    "content-security-policy",
+    "content-type",
+    "date",
+    "referrer-policy",
+    "transfer-encoding",
+}
+ALLOWED_REQUEST_HEADERS_FOR_DEBUG = {
+    "accept",
+    "accept-encoding",
+    "cache-control",
+    "connection",
+    "last-event-id",
+    "listen-delete",
+    "no-dependencies",
+    "user-agent",
+    "with-inferences",
+}
+
+logger = logging.getLogger("sse_client")
+logger.setLevel(logging.DEBUG)
 
 class SSEClient(object):
     def __init__(
@@ -75,6 +98,56 @@ class SSEClient(object):
         else:
             self.resp_iterator = self.iter_content()
         encoding = self.resp.encoding or self.resp.apparent_encoding
+        if not encoding:
+            logger.warning("Invalid or missing encoding, using utf-8 by default.")
+
+            response_url = getattr(self.resp, "url", None)
+            response_status_code = getattr(self.resp, "status_code", None)
+            response_reason = getattr(self.resp, "reason", None)
+            response_encoding = getattr(self.resp, "encoding", None)
+            response_history = getattr(self.resp, "history", None)
+            response_headers = getattr(self.resp, "headers", {})
+
+            request_method = getattr(self.resp.request, "method", None)
+            request_url = getattr(self.resp.request, "url", None)
+            request_headers = getattr(self.resp.request, "headers", {})
+
+            filtered_response_headers_for_debug = {
+                key: value
+                for key, value in response_headers.items()
+                if key.lower() in ALLOWED_RESPONSE_HEADERS_FOR_DEBUG
+            }
+
+            filtered_request_headers_for_debug = {
+                key: value
+                for key, value in request_headers.items()
+                if key.lower() in ALLOWED_REQUEST_HEADERS_FOR_DEBUG
+            }
+
+            response_info = {
+                "url": response_url,
+                "status_code": response_status_code,
+                "reason": response_reason,
+                "encoding_before_default": response_encoding,
+                "history": response_history,
+                "headers": str(filtered_response_headers_for_debug),
+            }
+
+            request_info = {
+                "method": request_method,
+                "url": request_url,
+                "headers": str(filtered_request_headers_for_debug)
+            }
+
+            logger.debug(
+                "HTTP Debug Informations",
+                extra={
+                    "response": response_info,
+                    "request": request_info,
+                }
+            )
+
+            encoding = "utf-8"
         self.decoder = codecs.getincrementaldecoder(encoding)(errors="replace")
 
         # TODO: Ensure we're handling redirects.  Might also stick the 'origin'
